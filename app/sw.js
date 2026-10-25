@@ -1,6 +1,6 @@
 // Aplikácia funguje aj bez internetu: keď je internet, berie sa vždy najnovšia verzia
 // (aj cestovný poriadok); keď nie je, použije sa posledná uložená.
-const CACHE = 'bus-domov-v6';
+const CACHE = 'bus-domov-v7';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'data/network.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 const NETWORK_TIMEOUT_MS = 4000;
 

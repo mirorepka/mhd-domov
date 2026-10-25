@@ -351,31 +351,56 @@ function render() {
 }
 
 function locationCard() {
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const android = /Android/.test(ua);
+  const edge = /Edg(e|A|iOS)?\//.test(ua);
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const browser = edge ? 'Microsoft Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox|FxiOS/.test(ua) ? 'Firefox' : ios ? 'Safari' : 'Chrome';
   const { code } = state.locError;
   let title, steps;
-  if (code === 1) {
-    title = 'Povoľ, prosím, polohu 📍';
-    steps = ios
-      ? ['Otvor <b>Nastavenia</b> v telefóne → <b>Súkromie a bezpečnosť</b> → <b>Polohové služby</b> a zapni ich',
-         'V tom istom zozname ťukni na <b>Webové stránky Safari</b> → <b>Pri používaní apky</b>',
-         standalone ? 'Vráť sa sem a ťukni na tlačidlo nižšie' : 'V Safari ťukni vľavo v adrese na <b>aA</b> → <b>Nastavenia webovej stránky</b> → <b>Poloha</b> → <b>Povoliť</b>']
-      : standalone
-        ? ['Otvor <b>Nastavenia</b> v telefóne → <b>Aplikácie</b> → <b>Bus domov</b> (alebo <b>Chrome</b>)', 'Ťukni na <b>Povolenia</b> → <b>Poloha</b> → <b>Povoliť len pri používaní</b>', 'Vráť sa sem a ťukni na tlačidlo nižšie']
-        : ['Ťukni na ikonku <b>vľavo od adresy</b> stránky hore (🔒 alebo ⚙️)', 'Vyber <b>Povolenia</b> alebo <b>Poloha</b> → <b>Povoliť</b>', 'Ťukni na tlačidlo nižšie'];
-  } else if (code === 2 || code === 3) {
-    title = 'Neviem nájsť, kde si 📍';
-    steps = ['Skontroluj, či máš v telefóne <b>zapnutú polohu</b> (potiahni prstom zhora a zapni <b>Poloha</b>)', 'Ak si vnútri, skús ísť k oknu alebo von', 'Ťukni na tlačidlo nižšie'];
-  } else {
+  if (code === 0) {
     title = 'Tento prehliadač nevie zistiť polohu';
     steps = ['Otvor stránku v <b>Chrome</b> alebo <b>Safari</b>'];
+  } else if (ios) {
+    title = code === 1 ? 'Povoľ, prosím, polohu 📍' : 'Neviem nájsť, kde si 📍';
+    steps = [
+      'Otvor <b>Nastavenia</b> v telefóne → <b>Súkromie a bezpečnosť</b> → <b>Polohové služby</b> a zapni ich',
+      browser === 'Safari'
+        ? 'V tom istom zozname ťukni na <b>Webové stránky Safari</b> → <b>Pri používaní apky</b>'
+        : `V tom istom zozname nájdi <b>${browser}</b> → <b>Pri používaní apky</b>`,
+      browser === 'Safari' && !standalone
+        ? 'V Safari ťukni vľavo v adrese na <b>aA</b> → <b>Nastavenia webovej stránky</b> → <b>Poloha</b> → <b>Povoliť</b>'
+        : 'Vráť sa sem a ťukni na tlačidlo nižšie',
+    ];
+  } else if (android) {
+    title = code === 1 ? 'Povoľ, prosím, polohu 📍' : 'Neviem nájsť, kde si 📍';
+    steps = [
+      'Potiahni prstom zhora a zapni <b>Poloha</b>',
+      `Otvor <b>Nastavenia</b> telefónu → <b>Aplikácie</b> → <b>${standalone ? `Bus domov</b> (alebo <b>${browser}` : browser}</b>) → <b>Povolenia</b> → <b>Poloha</b> → <b>Povoliť len pri používaní</b>`.replace(' ()', ''),
+      edge
+        ? 'V Edgi ťukni dole na <b>☰</b> (alebo <b>⋯</b>) → <b>Nastavenia</b> → <b>Ochrana osobných údajov a zabezpečenie</b> → <b>Povolenia lokality</b> → <b>Poloha</b> a povoľ ju (ak je tam <b>mhd.repka.sk</b> zablokovaná, ťukni na ňu a zmeň na <b>Povoliť</b>)'
+        : 'V prehliadači ťukni na ikonku <b>vľavo od adresy</b> (🔒 alebo ⚙️) → <b>Povolenia</b> → <b>Poloha</b> → <b>Povoliť</b>',
+      'Vráť sa sem a ťukni na tlačidlo nižšie',
+    ];
+  } else {
+    // počítač (Windows / Mac)
+    title = code === 1 ? 'Povoľ, prosím, polohu 📍' : 'Neviem nájsť, kde si 📍';
+    steps = [
+      'Ťukni na ikonku <b>vľavo od adresy</b> (🔒) → <b>Povolenia pre túto lokalitu</b> → <b>Poloha</b> → <b>Povoliť</b>',
+      'Vo Windows otvor <b>Nastavenia</b> → <b>Ochrana osobných údajov a zabezpečenie</b> → <b>Poloha</b> a zapni <b>Služby určovania polohy</b> aj <b>Povoliť aplikáciám pre počítač prístup k polohe</b>',
+      'Potom stránku obnov (F5) a ťukni na tlačidlo nižšie',
+    ];
   }
+  const again = state.locAttempts > 0 && !state.locTrying
+    ? '<p class="pill warn">Stále to nejde 😕 Skús kroky vyššie – hlavne povolenie polohy pre prehliadač v nastaveniach zariadenia.</p>' : '';
   return `<section class="card locask"><p class="big">${title}</p>
     <p class="muted">Bez polohy neviem, ktorá zastávka je pri tebe najbližšie.</p>
     <ol class="ios-steps">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>
-    <button class="btn wide" data-act="loc">📍 Povoliť polohu</button>
-    ${state.manual ? '' : '<p class="muted tiny">Alebo dole ťukni na <b>🚏 Som na inej zastávke</b> a vyber ju sám.</p>'}</section>`;
+    ${again}
+    <button class="btn wide" data-act="loc" ${state.locTrying ? 'disabled' : ''}>${state.locTrying ? '⏳ Skúšam…' : '📍 Povoliť polohu'}</button>
+    ${state.manual ? '' : '<p class="muted tiny">Alebo dole ťukni na <b>🚏 Som na inej zastávke</b> a vyber ju sám.</p>'}
+    <p class="muted tiny">${esc(browser)} · kód ${code}${state.locError.msg ? ` · ${esc(state.locError.msg)}` : ''}</p></section>`;
 }
 
 // ---------- výber zastávky ----------
@@ -476,25 +501,34 @@ function openDestPicker() {
 }
 
 // ---------- poloha ----------
-function startLocation() {
+// Pri chybe "nedostupná" skúsime ešte menej presnú polohu (Wi-Fi / sieť) – pomáha na počítačoch a v Edgi.
+function startLocation(highAccuracy = true) {
   if (!('geolocation' in navigator)) {
     state.locError = { code: 0 };
     render();
     return;
   }
   if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
+  state.locPending = true;
+  const token = (state.locToken = (state.locToken || 0) + 1);
   state.watchId = navigator.geolocation.watchPosition(
     (p) => {
+      state.locPending = false;
+      state.locTrying = false;
       state.pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy };
       state.locError = null;
       render();
     },
     (e) => {
+      if (token !== state.locToken) return; // starší pokus
       if (state.pos && e.code !== 1) return; // poloha už je, len chvíľu neprišla nová
-      state.locError = { code: e.code };
-      render();
+      if (e.code !== 1 && highAccuracy) { startLocation(false); return; }
+      state.locPending = false;
+      // tlačidlo nech chvíľu ukazuje "Skúšam…", aby obrazovka len nepreblikla
+      const show = () => { state.locTrying = false; state.locError = { code: e.code, msg: e.message }; render(); };
+      if (state.locTrying) setTimeout(show, 1200); else show();
     },
-    { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+    { enableHighAccuracy: highAccuracy, maximumAge: 60000, timeout: highAccuracy ? 15000 : 30000 }
   );
 }
 
@@ -598,16 +632,21 @@ async function init() {
   // Keď sa vráti do aplikácie (napr. z nastavení) bez polohy, opýtame sa znova
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
-    if (!state.pos) startLocation();
+    if (!state.pos && state.locError && !state.locPending) startLocation();
     render();
   });
   navigator.permissions?.query({ name: 'geolocation' }).then((p) => {
-    p.onchange = () => { if (p.state !== 'denied') startLocation(); };
+    p.onchange = () => { if (p.state === 'granted' && !state.pos) startLocation(); };
   }).catch(() => {});
   $('main').addEventListener('click', (e) => {
-    if (e.target.closest('[data-act="loc"]')) { state.locError = null; startLocation(); render(); }
+    if (e.target.closest('[data-act="loc"]') && !state.locTrying) {
+      state.locTrying = true;
+      state.locAttempts = (state.locAttempts || 0) + 1;
+      render();
+      startLocation();
+    }
   });
-  setInterval(() => { if (state.locError && !state.pos) startLocation(); }, 60000);
+  setInterval(() => { if (state.locError && !state.pos && !state.locPending) startLocation(); }, 60000);
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }

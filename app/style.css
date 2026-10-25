@@ -187,3 +187,4 @@ footer .tiny { flex-basis: 100%; }
 
 .locask { border: 2px solid var(--warn); }
 .btn.wide { width: 100%; margin-top: 12px; }
+.btn:disabled { opacity: .7; cursor: default; }
