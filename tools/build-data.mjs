@@ -187,6 +187,7 @@ out.home = {
   lon: +(homeStops.reduce((a, [s]) => a + s[3], 0) / homeStops.length).toFixed(6),
 };
 
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(out));
 const profiles = out.patterns.reduce((a, p) => a + p[3].length, 0);
 console.log(`Hotovo: ${OUT} (${(fs.statSync(OUT).size / 1024).toFixed(0)} kB) – zastávok ${out.stops.length}, liniek ${out.routes.length}, vzorov ${out.patterns.length}, profilov ${profiles}, prestupov ${out.footpaths.length}`);
