@@ -279,11 +279,9 @@ function render() {
   const now = new Date();
 
   if (!state.manual && !state.pos) {
-    if (state.locError) {
-      main.innerHTML = `<section class="card"><p class="big">Neviem, kde si 🤷</p>
-        <p class="muted">${esc(state.locError)}</p>
-        <p class="muted">Klikni dole na <b>🚏 Som na inej zastávke</b> a vyber ju sám.</p></section>`;
-    }
+    main.innerHTML = state.locError ? locationCard()
+      : `<section class="card"><p class="big">Hľadám, kde si… 📍</p>
+        <p class="muted">Ak sa ťa telefón opýta na polohu, klikni na <b>Povoliť</b>.</p></section>`;
     return;
   }
   const dest = currentDest();
@@ -348,7 +346,36 @@ function render() {
   if (ymd(now) > data.validTo) {
     html += `<section class="card"><p class="pill warn">Cestovný poriadok je starý – treba ho aktualizovať.</p></section>`;
   }
-  main.innerHTML = html;
+  // Aj keď si vybral zastávku ručne, stále ho prosíme o povolenie polohy
+  main.innerHTML = (state.locError && !state.pos ? locationCard() : '') + html;
+}
+
+function locationCard() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const { code } = state.locError;
+  let title, steps;
+  if (code === 1) {
+    title = 'Povoľ, prosím, polohu 📍';
+    steps = ios
+      ? ['Otvor <b>Nastavenia</b> v telefóne → <b>Súkromie a bezpečnosť</b> → <b>Polohové služby</b> a zapni ich',
+         'V tom istom zozname ťukni na <b>Webové stránky Safari</b> → <b>Pri používaní apky</b>',
+         standalone ? 'Vráť sa sem a ťukni na tlačidlo nižšie' : 'V Safari ťukni vľavo v adrese na <b>aA</b> → <b>Nastavenia webovej stránky</b> → <b>Poloha</b> → <b>Povoliť</b>']
+      : standalone
+        ? ['Otvor <b>Nastavenia</b> v telefóne → <b>Aplikácie</b> → <b>Bus domov</b> (alebo <b>Chrome</b>)', 'Ťukni na <b>Povolenia</b> → <b>Poloha</b> → <b>Povoliť len pri používaní</b>', 'Vráť sa sem a ťukni na tlačidlo nižšie']
+        : ['Ťukni na ikonku <b>vľavo od adresy</b> stránky hore (🔒 alebo ⚙️)', 'Vyber <b>Povolenia</b> alebo <b>Poloha</b> → <b>Povoliť</b>', 'Ťukni na tlačidlo nižšie'];
+  } else if (code === 2 || code === 3) {
+    title = 'Neviem nájsť, kde si 📍';
+    steps = ['Skontroluj, či máš v telefóne <b>zapnutú polohu</b> (potiahni prstom zhora a zapni <b>Poloha</b>)', 'Ak si vnútri, skús ísť k oknu alebo von', 'Ťukni na tlačidlo nižšie'];
+  } else {
+    title = 'Tento prehliadač nevie zistiť polohu';
+    steps = ['Otvor stránku v <b>Chrome</b> alebo <b>Safari</b>'];
+  }
+  return `<section class="card locask"><p class="big">${title}</p>
+    <p class="muted">Bez polohy neviem, ktorá zastávka je pri tebe najbližšie.</p>
+    <ol class="ios-steps">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>
+    <button class="btn wide" data-act="loc">📍 Povoliť polohu</button>
+    ${state.manual ? '' : '<p class="muted tiny">Alebo dole ťukni na <b>🚏 Som na inej zastávke</b> a vyber ju sám.</p>'}</section>`;
 }
 
 // ---------- výber zastávky ----------
@@ -451,7 +478,7 @@ function openDestPicker() {
 // ---------- poloha ----------
 function startLocation() {
   if (!('geolocation' in navigator)) {
-    state.locError = 'Tento prehliadač nevie zistiť polohu.';
+    state.locError = { code: 0 };
     render();
     return;
   }
@@ -463,9 +490,8 @@ function startLocation() {
       render();
     },
     (e) => {
-      state.locError = e.code === 1
-        ? 'Poloha nie je povolená. Povoľ ju v nastaveniach prehliadača pre túto stránku.'
-        : 'Polohu sa nepodarilo zistiť. Skús to vonku alebo o chvíľu.';
+      if (state.pos && e.code !== 1) return; // poloha už je, len chvíľu neprišla nová
+      state.locError = { code: e.code };
       render();
     },
     { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
@@ -569,7 +595,19 @@ async function init() {
   startLocation();
   render();
   setInterval(render, 15000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+  // Keď sa vráti do aplikácie (napr. z nastavení) bez polohy, opýtame sa znova
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (!state.pos) startLocation();
+    render();
+  });
+  navigator.permissions?.query({ name: 'geolocation' }).then((p) => {
+    p.onchange = () => { if (p.state !== 'denied') startLocation(); };
+  }).catch(() => {});
+  $('main').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="loc"]')) { state.locError = null; startLocation(); render(); }
+  });
+  setInterval(() => { if (state.locError && !state.pos) startLocation(); }, 60000);
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }

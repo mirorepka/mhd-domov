@@ -184,3 +184,6 @@ footer .tiny { flex-basis: 100%; }
 #destHome { width: 100%; margin: -6px 0 14px; padding: 10px; }
 .pick-list li.muted { padding: 12px 4px; }
 .pick-list .d { text-align: right; font-size: .9rem; }
+
+.locask { border: 2px solid var(--warn); }
+.btn.wide { width: 100%; margin-top: 12px; }
