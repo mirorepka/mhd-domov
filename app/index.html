@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Bus domov</title>
+  <meta name="description" content="Najbližší autobus domov z najbližšej zastávky">
+  <meta name="theme-color" content="#0e5aa7">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Bus domov">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🚌 Bus domov</h1>
+    <p class="home" id="homeLabel">Domov</p>
+  </header>
+
+  <main id="main">
+    <section class="card" id="status">
+      <p class="big">Hľadám, kde si… 📍</p>
+      <p class="muted">Ak sa ťa telefón opýta na polohu, klikni na <b>Povoliť</b>.</p>
+    </section>
+  </main>
+
+  <section class="card hidden" id="picker">
+    <div class="picker-head">
+      <h2>Vyber zastávku</h2>
+      <button class="btn small" id="closePicker">Zavrieť</button>
+    </div>
+    <input id="search" type="search" placeholder="Hľadaj zastávku…" autocomplete="off">
+    <ul id="stopList"></ul>
+  </section>
+
+  <footer>
+    <button class="btn" id="pickBtn">🔁 Iná zastávka</button>
+    <button class="btn" id="locBtn">📍 Najbližšia</button>
+    <p class="muted tiny" id="dataInfo"></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
