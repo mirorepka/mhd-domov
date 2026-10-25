@@ -121,7 +121,7 @@ footer .tiny { flex-basis: 100%; }
 .btn.small { flex: 0; padding: 8px 14px; }
 
 .picker-head { display: flex; justify-content: space-between; align-items: center; }
-#search {
+#search, #destSearch {
   width: 100%;
   font: inherit;
   padding: 12px;
@@ -131,8 +131,8 @@ footer .tiny { flex-basis: 100%; }
   color: var(--text);
   margin: 8px 0;
 }
-#stopList { list-style: none; margin: 0; padding: 0; max-height: 55vh; overflow-y: auto; }
-#stopList button {
+.pick-list { list-style: none; margin: 0; padding: 0; max-height: 55vh; overflow-y: auto; }
+.pick-list button {
   width: 100%;
   text-align: left;
   font: inherit;
@@ -145,7 +145,7 @@ footer .tiny { flex-basis: 100%; }
   justify-content: space-between;
   cursor: pointer;
 }
-#stopList .d { color: var(--muted); }
+.pick-list .d { color: var(--muted); }
 
 .steps { list-style: none; padding: 0; margin: 16px 0 0; }
 .steps li {
@@ -167,3 +167,20 @@ footer .tiny { flex-basis: 100%; }
 .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); flex: 0 0 auto; }
 .ios-steps { margin: 10px 0 0; padding-left: 22px; }
 .ios-steps li { margin: 6px 0; }
+
+.dest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 6px 0 14px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.dest-label { font-size: 1.1rem; }
+.btn.small { flex: 0 0 auto; }
+#destHome { width: 100%; margin: -6px 0 14px; padding: 10px; }
+.pick-list li.muted { padding: 12px 4px; }
+.pick-list .d { text-align: right; font-size: .9rem; }

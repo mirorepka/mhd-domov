@@ -11,6 +11,9 @@ Web: https://mhd.repka.sk
 - V aplikácii (`app/app.js`) beží vyhľadávanie spojení algoritmom RAPTOR: pešo na niektorú
   z blízkych zastávok (do 1,2 km), max. 3 prestupy, prestupy pešo medzi zastávkami do 300 m.
   Spoj s menej prestupmi má prednosť, ak je najviac o 5 minút pomalší.
+- Cieľ je predvolene domov; cez **Iné miesto** sa dá zadať zastávka alebo miesto/adresa
+  (vyhľadávanie miest cez OpenStreetMap Nominatim, len v okolí Bratislavy). Posledné ciele
+  si pamätá iba daný telefón.
 - GitHub Actions (`.github/workflows/deploy.yml`) každý deň skontroluje nový cestovný poriadok
   a nasadí aplikáciu na GitHub Pages.
 

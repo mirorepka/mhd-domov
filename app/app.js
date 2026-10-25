@@ -64,12 +64,20 @@ function prepareNetwork(data) {
     net.foot[a].push(b, sec);
     net.foot[b].push(a, sec);
   }
-  net.homeCands = [];
-  data.stops.forEach(([, , lat, lon], i) => {
-    const d = distM(lat, lon, data.home.lat, data.home.lon);
-    if (d <= HOME_RADIUS_M) net.homeCands.push([i, walkSec(d)]);
-  });
+  setDestination(null);
 }
+
+// Cieľ: null = domov, inak { name, lat, lon }. Pripraví zastávky, z ktorých sa do cieľa dôjde pešo.
+function setDestination(dest) {
+  const { data } = state;
+  state.dest = dest;
+  const d = currentDest();
+  const all = data.stops.map(([, , lat, lon], i) => [i, distM(lat, lon, d.lat, d.lon)]).sort((a, b) => a[1] - b[1]);
+  net.homeCands = all.filter(([, m], j) => m <= HOME_RADIUS_M || j < 3).map(([i, m]) => [i, walkSec(m), m]);
+  $('destName').textContent = d.home ? '🏠 Domov' : `🏁 ${d.name}`;
+  $('destHome').classList.toggle('hidden', d.home);
+}
+const currentDest = () => state.dest || { name: 'Domov', lat: state.data.home.lat, lon: state.data.home.lon, home: true };
 
 // Spoje, ktoré jazdia v okne [teraz, teraz + WINDOW_H]; časy v sekundách od dnešnej polnoci.
 function activeTrips(now) {
@@ -167,11 +175,11 @@ function bestJourney(origins, act) {
   const { tau, lab } = raptor(origins, act);
   let pick = null;
   for (let k = 1; k < tau.length; k++) {
-    for (const [s, w] of net.homeCands) {
+    for (const [s, w, m] of net.homeCands) {
       if (!lab[k].has(s)) continue;
       const arr = tau[k][s] + w;
       const score = arr + TRANSFER_PENALTY * (k - 1);
-      if (!pick || score < pick.score) pick = { k, s, arr, score };
+      if (!pick || score < pick.score) pick = { k, s, arr, score, m };
     }
   }
   if (!pick) return null;
@@ -198,7 +206,7 @@ function bestJourney(origins, act) {
   const originWalkM = lab[0].get(s).o;
   const first = legs.find((l) => !l.walk);
   return {
-    origin: s, originWalkM, legs, home: pick.arr, homeStop: stops[pick.s],
+    origin: s, originWalkM, legs, home: pick.arr, homeStop: stops[pick.s], destWalkM: pick.m,
     transfers: pick.k - 1, leave: first.dep - walkSec(originWalkM),
   };
 }
@@ -256,7 +264,12 @@ function renderSteps(j, now) {
       Vystúp ${last ? '' : `o ${hhmm(relToDate(l.arr))} `}na zastávke ${stopLabel(l.to, false)} <span class="sub">po ${l.stopsCount} ${stopWord(l.stopsCount)}</span>
       ${last ? '' : '<div class="change">🔁 tu prestúp</div>'}</div></li>`;
   });
-  return html + `<li class="homeStep">🏠 Doma o <b>${hhmm(relToDate(j.home))}</b></li></ol>`;
+  const dest = currentDest();
+  if (j.destWalkM > 150 && !dest.home) {
+    const m = Math.max(1, Math.round(walkSec(j.destWalkM) / 60));
+    html += `<li class="walk">🚶 Dôjdi pešo do cieľa – asi ${fmtDist(j.destWalkM)}, ${m} ${minWord(m)}</li>`;
+  }
+  return html + `<li class="homeStep">${dest.home ? '🏠 Doma' : `🏁 ${esc(dest.name)}`} o <b>${hhmm(relToDate(j.home))}</b></li></ol>`;
 }
 
 function render() {
@@ -269,20 +282,25 @@ function render() {
     if (state.locError) {
       main.innerHTML = `<section class="card"><p class="big">Neviem, kde si 🤷</p>
         <p class="muted">${esc(state.locError)}</p>
-        <p class="muted">Klikni na <b>🔁 Iná zastávka</b> a vyber ju sám.</p></section>`;
+        <p class="muted">Klikni dole na <b>🚏 Som na inej zastávke</b> a vyber ju sám.</p></section>`;
     }
     return;
   }
-  if (!state.manual && distM(state.pos.lat, state.pos.lon, data.home.lat, data.home.lon) < AT_HOME_M) {
-    main.innerHTML = `<section class="card"><p class="big">Si doma alebo blízko domu 🏠</p>
-      <p class="muted">Domov to máš pešo. Keď budeš ďalej, ukážem ti, ako sa dostaneš domov.</p></section>`;
+  const dest = currentDest();
+  const arriveTxt = dest.home ? 'doma o' : 'v cieli o';
+  if (!state.manual && distM(state.pos.lat, state.pos.lon, dest.lat, dest.lon) < AT_HOME_M) {
+    main.innerHTML = dest.home
+      ? `<section class="card"><p class="big">Si doma alebo blízko domu 🏠</p>
+        <p class="muted">Domov to máš pešo. Keď budeš ďalej, ukážem ti, ako sa dostaneš domov.</p></section>`
+      : `<section class="card"><p class="big">Si blízko cieľa 🏁</p>
+        <p class="muted">Do cieľa <b>${esc(dest.name)}</b> to máš pešo.</p></section>`;
     return;
   }
 
   const list = journeys(now);
   const first = list[0];
   if (!first) {
-    main.innerHTML = `<section class="card"><p class="big">Teraz odtiaľto nejde nič domov 😴</p>
+    main.innerHTML = `<section class="card"><p class="big">Teraz odtiaľto nejde nič ${dest.home ? 'domov' : 'do cieľa'} 😴</p>
       <p class="muted">Zavolaj mamine alebo ockovi.</p></section>`;
     return;
   }
@@ -312,7 +330,7 @@ function render() {
     <div class="next">${badge(firstRide.route)}
       <div><div class="when">${whenTxt}</div>
       <div class="sub">odchod ${dayHhmm(relToDate(firstRide.dep), now)} · ${transfersTxt}</div>
-      <div class="sub"><b>doma o ${hhmm(relToDate(first.home))}</b></div></div></div>
+      <div class="sub"><b>${arriveTxt} ${hhmm(relToDate(first.home))}</b></div></div></div>
     <div class="pill ${pill[0]}">${pill[1]}</div>
     ${renderSteps(first, now)}</section>`;
 
@@ -323,7 +341,7 @@ function render() {
         const rides = j.legs.filter((l) => !l.walk);
         const chain = rides.map((l) => badge(l.route, true)).join('<span class="arrow">→</span>');
         return `<li><span class="chain">${chain}</span>
-          <span>z ${esc(state.data.stops[rides[0].from][0])}<br><span class="sub">doma o ${hhmm(relToDate(j.home))}</span></span>
+          <span>z ${esc(state.data.stops[rides[0].from][0])}<br><span class="sub">${arriveTxt} ${hhmm(relToDate(j.home))}</span></span>
           <span class="t">${dayHhmm(relToDate(rides[0].dep), now)}</span></li>`;
       }).join('') + `</ul></section>`;
   }
@@ -359,6 +377,75 @@ function renderPicker() {
   $('stopList').innerHTML = items
     .map(({ g, d }) => `<li><button data-name="${esc(g.name)}"><span>${esc(g.name)}</span><span class="d">${d === null ? '' : fmtDist(d)}</span></button></li>`)
     .join('');
+}
+
+// ---------- výber cieľa ----------
+const RECENT_KEY = 'recentDest';
+function recentDests() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { return []; }
+}
+function rememberDest(d) {
+  const list = [d, ...recentDests().filter((x) => x.name !== d.name)].slice(0, 5);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch { /* nevadí */ }
+}
+
+let placeTimer = null, placeSeq = 0;
+function renderDestPicker() {
+  const raw = $('destSearch').value.trim();
+  const q = fold(raw);
+  const items = [];
+  if (!q) {
+    items.push({ icon: '🏠', name: 'Domov', home: true });
+    recentDests().forEach((d) => items.push({ icon: '🕘', ...d }));
+  } else {
+    state.groups
+      .filter((g) => fold(g.name).includes(q))
+      .sort((a, b) => fold(a.name).indexOf(q) - fold(b.name).indexOf(q) || a.name.localeCompare(b.name, 'sk'))
+      .slice(0, 6)
+      .forEach((g) => items.push({
+        icon: '🚏', name: g.name, sub: 'zastávka',
+        lat: g.platforms.reduce((a, p) => a + p.lat, 0) / g.platforms.length,
+        lon: g.platforms.reduce((a, p) => a + p.lon, 0) / g.platforms.length,
+      }));
+  }
+  state.destItems = items;
+  const list = $('destList');
+  list.innerHTML = items.map((it, i) => `<li><button data-i="${i}"><span>${it.icon} ${esc(it.name)}</span><span class="d">${esc(it.sub || '')}</span></button></li>`).join('');
+
+  // Miesta a adresy (OpenStreetMap) – až keď dopíše aspoň 3 znaky
+  clearTimeout(placeTimer);
+  if (raw.length < 3) return;
+  list.insertAdjacentHTML('beforeend', '<li class="muted" id="placeLoading">Hľadám miesta…</li>');
+  const seq = ++placeSeq;
+  placeTimer = setTimeout(async () => {
+    let found = [];
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=sk&countrycodes=sk'
+        + '&viewbox=16.94,48.27,17.36,47.98&bounded=1&q=' + encodeURIComponent(raw);
+      found = await (await fetch(url)).json();
+    } catch { /* bez internetu */ }
+    if (seq !== placeSeq) return;
+    $('placeLoading')?.remove();
+    const base = state.destItems.length;
+    const places = [];
+    for (const r of found) {
+      const parts = r.display_name.split(', ');
+      const p = { icon: '📍', name: r.name || parts.slice(0, 2).join(' '), sub: parts.slice(r.name ? 1 : 2, 3).join(', '), lat: +r.lat, lon: +r.lon };
+      // rovnaké miesto viackrát (napr. budova aj parkovisko) → stačí raz
+      if (!places.some((x) => x.name === p.name && distM(x.lat, x.lon, p.lat, p.lon) < 400)) places.push(p);
+    }
+    state.destItems.push(...places);
+    list.insertAdjacentHTML('beforeend', places.length
+      ? places.map((it, i) => `<li><button data-i="${base + i}"><span>${it.icon} ${esc(it.name)}</span><span class="d">${esc(it.sub)}</span></button></li>`).join('')
+      : (state.destItems.length ? '' : '<li class="muted">Nič som nenašiel. Skús napísať inak.</li>'));
+  }, 600);
+}
+
+function openDestPicker() {
+  $('destPicker').classList.remove('hidden');
+  $('destSearch').value = '';
+  renderDestPicker();
+  $('destSearch').focus();
 }
 
 // ---------- poloha ----------
@@ -449,6 +536,23 @@ async function init() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   $('locBtn').onclick = () => { state.manual = null; startLocation(); render(); };
+  $('destBtn').onclick = openDestPicker;
+  $('closeDest').onclick = () => $('destPicker').classList.add('hidden');
+  $('destHome').onclick = () => { setDestination(null); render(); };
+  $('destSearch').oninput = renderDestPicker;
+  $('destList').onclick = (e) => {
+    const b = e.target.closest('button[data-i]');
+    if (!b) return;
+    const it = state.destItems[+b.dataset.i];
+    if (it.home) setDestination(null);
+    else {
+      const d = { name: it.name, sub: it.sub, lat: it.lat, lon: it.lon };
+      setDestination(d);
+      rememberDest(d);
+    }
+    $('destPicker').classList.add('hidden');
+    render();
+  };
 
   try {
     const res = await fetch('data/network.json');
@@ -460,7 +564,6 @@ async function init() {
   prepareNetwork(state.data);
   state.groups = buildGroups(state.data);
   const v = state.data.validTo;
-  $('homeLabel').textContent = `Domov: ${state.data.home.name}`;
   $('dataInfo').textContent = `Cestovný poriadok DPB platí do ${+v.slice(6)}. ${+v.slice(4, 6)}. ${v.slice(0, 4)}. Časy sú podľa poriadku, bez meškaní.`;
 
   startLocation();

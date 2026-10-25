@@ -16,8 +16,21 @@
 <body>
   <header>
     <h1>🚌 Bus domov</h1>
-    <p class="home" id="homeLabel">Domov</p>
+    <div class="dest">
+      <span class="dest-label">Kam: <b id="destName">🏠 Domov</b></span>
+      <button class="btn small" id="destBtn">✏️ Iné miesto</button>
+    </div>
+    <button class="btn ghost hidden" id="destHome">🏠 Späť: cesta domov</button>
   </header>
+
+  <section class="card hidden" id="destPicker">
+    <div class="picker-head">
+      <h2>Kam chceš ísť?</h2>
+      <button class="btn small" id="closeDest">Zavrieť</button>
+    </div>
+    <input id="destSearch" type="search" placeholder="Napíš miesto, napr. Aupark, ZOO, Hlavná stanica" autocomplete="off">
+    <ul id="destList" class="pick-list"></ul>
+  </section>
 
   <section class="card install hidden" id="install">
     <p class="big">📲 Stiahni si aplikáciu</p>
@@ -41,12 +54,12 @@
       <button class="btn small" id="closePicker">Zavrieť</button>
     </div>
     <input id="search" type="search" placeholder="Hľadaj zastávku…" autocomplete="off">
-    <ul id="stopList"></ul>
+    <ul id="stopList" class="pick-list"></ul>
   </section>
 
   <footer>
-    <button class="btn" id="pickBtn">🔁 Iná zastávka</button>
-    <button class="btn" id="locBtn">📍 Najbližšia</button>
+    <button class="btn" id="pickBtn">🚏 Som na inej zastávke</button>
+    <button class="btn" id="locBtn">📍 Podľa polohy</button>
     <p class="muted tiny" id="dataInfo"></p>
   </footer>
 
