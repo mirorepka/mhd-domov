@@ -3,7 +3,10 @@
 PWA aplikácia pre deti: podľa polohy telefónu vyhľadá najrýchlejšie spojenie MHD Bratislava
 **domov** (zastávka Kaštieľ Rusovce) – aj s prestupmi – a povie, kedy treba vyraziť.
 
-Web: https://mhd.repka.sk
+Web: https://mhd.repka.sk  ·  verzia pre kamarátov: https://mhd.repka.sk/kamarat/
+
+Verzia pre kamarátov (`app/kamarat/`) používa ten istý kód (`APP_MODE = 'friend'`): pri prvom spustení
+sa opýta na adresu domova a uloží ju len v danom telefóne (localStorage). Dá sa nainštalovať zvlášť.
 
 ## Ako to funguje
 - `tools/update-feeds.mjs` stiahne oficiálne GTFS dáta DPB, odloží ich do `gtfs/` a zavolá

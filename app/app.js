@@ -12,6 +12,11 @@ const TRANSFER_PENALTY = 300;  // radšej o 5 min neskôr, ale s menej prestupmi
 const WINDOW_H = 10;           // ako ďaleko dopredu hľadať spoje
 const OPTIONS = 4;             // koľko možností ukázať
 
+// Verzia pre kamarátov (kamarat/index.html): domov si každý nastaví sám, uloží sa len v jeho telefóne.
+const FRIEND = window.APP_MODE === 'friend';
+const BASE = window.APP_BASE || '';
+const HOME_KEY = 'friendHome';
+
 const $ = (id) => document.getElementById(id);
 const state = { data: null, groups: [], pos: null, manual: null, watchId: null, locError: null };
 const net = { stopRoutes: null, foot: null, homeCands: null, cacheKey: null, active: null, mid0: 0 };
@@ -71,13 +76,26 @@ function prepareNetwork(data) {
 function setDestination(dest) {
   const { data } = state;
   state.dest = dest;
+  $('destHome').classList.toggle('hidden', !dest);
+  if (!homePlace() && !dest) { net.homeCands = []; return; }
   const d = currentDest();
   const all = data.stops.map(([, , lat, lon], i) => [i, distM(lat, lon, d.lat, d.lon)]).sort((a, b) => a[1] - b[1]);
   net.homeCands = all.filter(([, m], j) => m <= HOME_RADIUS_M || j < 3).map(([i, m]) => [i, walkSec(m), m]);
   $('destName').textContent = d.home ? '🏠 Domov' : `🏁 ${d.name}`;
-  $('destHome').classList.toggle('hidden', d.home);
 }
-const currentDest = () => state.dest || { name: 'Domov', lat: state.data.home.lat, lon: state.data.home.lon, home: true };
+const homePlace = () => (FRIEND ? state.friendHome : state.data.home);
+const currentDest = () => state.dest || { name: 'Domov', lat: homePlace().lat, lon: homePlace().lon, home: true };
+
+function loadFriendHome() {
+  try { state.friendHome = JSON.parse(localStorage.getItem(HOME_KEY)); } catch { state.friendHome = null; }
+}
+function saveFriendHome(h) {
+  state.friendHome = h;
+  try { localStorage.setItem(HOME_KEY, JSON.stringify(h)); } catch { /* súkromné okno – platí aspoň teraz */ }
+  const info = $('homeInfo');
+  if (info) info.textContent = `Domov: ${h.name}`;
+  setDestination(null);
+}
 
 // Spoje, ktoré jazdia v okne [teraz, teraz + WINDOW_H]; časy v sekundách od dnešnej polnoci.
 function activeTrips(now) {
@@ -278,6 +296,15 @@ function render() {
   if (!data) return;
   const now = new Date();
 
+  if (FRIEND && !state.friendHome) {
+    main.innerHTML = `<section class="card locask"><p class="big">👋 Ahoj! Kde bývaš?</p>
+      <p class="muted">Najprv mi povedz, kde je tvoj domov. Potom ti vždy ukážem, ktorým autobusom
+      alebo električkou sa tam najrýchlejšie dostaneš.</p>
+      <button class="btn wide" data-act="sethome">🏠 Nastaviť domov</button>
+      <p class="muted tiny">Adresa sa uloží len v tomto telefóne.</p></section>`;
+    return;
+  }
+
   if (!state.manual && !state.pos) {
     main.innerHTML = state.locError ? locationCard()
       : `<section class="card"><p class="big">Hľadám, kde si… 📍</p>
@@ -422,7 +449,7 @@ function groupDistance(g) {
 function renderPicker() {
   const q = fold($('search').value.trim());
   const items = state.groups
-    .filter((g) => g.name !== state.data.home.name && (!q || fold(g.name).includes(q)))
+    .filter((g) => (FRIEND || g.name !== state.data.home.name) && (!q || fold(g.name).includes(q)))
     .map((g) => ({ g, d: groupDistance(g) }))
     .sort((a, b) => (a.d ?? 0) - (b.d ?? 0) || a.g.name.localeCompare(b.g.name, 'sk'))
     .slice(0, 60);
@@ -446,7 +473,9 @@ function renderDestPicker() {
   const raw = $('destSearch').value.trim();
   const q = fold(raw);
   const items = [];
-  if (!q) {
+  if (!q && state.pickFor === 'home') {
+    if (state.pos) items.push({ icon: '📍', name: 'Som práve doma – použi moju polohu', here: true });
+  } else if (!q) {
     items.push({ icon: '🏠', name: 'Domov', home: true });
     recentDests().forEach((d) => items.push({ icon: '🕘', ...d }));
   } else {
@@ -472,8 +501,8 @@ function renderDestPicker() {
   placeTimer = setTimeout(async () => {
     let found = [];
     try {
-      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=sk&countrycodes=sk'
-        + '&viewbox=16.94,48.27,17.36,47.98&bounded=1&q=' + encodeURIComponent(raw);
+      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=sk&countrycodes=sk&addressdetails=1'
+        + '&viewbox=16.85,48.32,17.45,47.95&bounded=1&q=' + encodeURIComponent(raw);
       found = await (await fetch(url)).json();
     } catch { /* bez internetu */ }
     if (seq !== placeSeq) return;
@@ -482,7 +511,11 @@ function renderDestPicker() {
     const places = [];
     for (const r of found) {
       const parts = r.display_name.split(', ');
-      const p = { icon: '📍', name: r.name || parts.slice(0, 2).join(' '), sub: parts.slice(r.name ? 1 : 2, 3).join(', '), lat: +r.lat, lon: +r.lon };
+      const a = r.address || {};
+      const street = [a.road || a.pedestrian || a.square, a.house_number].filter(Boolean).join(' ');
+      const name = r.name || street || parts.slice(0, 2).join(' ');
+      const sub = (r.name && street) || a.suburb || a.city_district || a.village || parts.slice(1, 3).join(', ');
+      const p = { icon: '📍', name, sub, lat: +r.lat, lon: +r.lon };
       // rovnaké miesto viackrát (napr. budova aj parkovisko) → stačí raz
       if (!places.some((x) => x.name === p.name && distM(x.lat, x.lon, p.lat, p.lon) < 400)) places.push(p);
     }
@@ -493,7 +526,12 @@ function renderDestPicker() {
   }, 600);
 }
 
-function openDestPicker() {
+function openDestPicker(purpose = 'dest') {
+  state.pickFor = purpose;
+  const forHome = purpose === 'home';
+  $('destTitle').textContent = forHome ? 'Kde bývaš?' : 'Kam chceš ísť?';
+  $('destSearch').placeholder = forHome ? 'Napíš ulicu a číslo, napr. Hálova 12' : 'Napíš miesto, napr. Aupark, ZOO, Hlavná stanica';
+  $('closeDest').classList.toggle('hidden', forHome && !state.friendHome);
   $('destPicker').classList.remove('hidden');
   $('destSearch').value = '';
   renderDestPicker();
@@ -596,7 +634,8 @@ async function init() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   $('locBtn').onclick = () => { state.manual = null; startLocation(); render(); };
-  $('destBtn').onclick = openDestPicker;
+  $('destBtn').onclick = () => openDestPicker('dest');
+  if ($('homeBtn')) $('homeBtn').onclick = () => { openDestPicker('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   $('closeDest').onclick = () => $('destPicker').classList.add('hidden');
   $('destHome').onclick = () => { setDestination(null); render(); };
   $('destSearch').oninput = renderDestPicker;
@@ -604,7 +643,11 @@ async function init() {
     const b = e.target.closest('button[data-i]');
     if (!b) return;
     const it = state.destItems[+b.dataset.i];
-    if (it.home) setDestination(null);
+    if (state.pickFor === 'home') {
+      saveFriendHome(it.here
+        ? { name: 'Moja adresa', lat: state.pos.lat, lon: state.pos.lon }
+        : { name: it.name, sub: it.sub, lat: it.lat, lon: it.lon });
+    } else if (it.home) setDestination(null);
     else {
       const d = { name: it.name, sub: it.sub, lat: it.lat, lon: it.lon };
       setDestination(d);
@@ -615,11 +658,15 @@ async function init() {
   };
 
   try {
-    const res = await fetch('data/network.json');
+    const res = await fetch(BASE + 'data/network.json');
     state.data = await res.json();
   } catch {
     $('main').innerHTML = '<section class="card"><p class="big">Nepodarilo sa načítať cestovný poriadok 😕</p><p class="muted">Skontroluj internet a skús znova.</p></section>';
     return;
+  }
+  if (FRIEND) {
+    loadFriendHome();
+    if (state.friendHome && $('homeInfo')) $('homeInfo').textContent = `Domov: ${state.friendHome.name}`;
   }
   prepareNetwork(state.data);
   state.groups = buildGroups(state.data);
@@ -639,6 +686,7 @@ async function init() {
     p.onchange = () => { if (p.state === 'granted' && !state.pos) startLocation(); };
   }).catch(() => {});
   $('main').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="sethome"]')) { openDestPicker('home'); return; }
     if (e.target.closest('[data-act="loc"]') && !state.locTrying) {
       state.locTrying = true;
       state.locAttempts = (state.locAttempts || 0) + 1;
@@ -648,7 +696,7 @@ async function init() {
   });
   setInterval(() => { if (state.locError && !state.pos && !state.locPending) startLocation(); }, 60000);
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register(BASE + 'sw.js').catch(() => {});
 }
 
 init();

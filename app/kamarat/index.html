@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Bus domov – kamaráti</title>
+  <meta name="description" content="Najrýchlejšie spojenie MHD Bratislava k tebe domov">
+  <meta name="theme-color" content="#0e5aa7">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="../icons/icon-192.png">
+  <link rel="apple-touch-icon" href="../icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Bus domov">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header>
+    <h1>🚌 Bus domov</h1>
+    <div class="dest">
+      <span class="dest-label">Kam: <b id="destName">🏠 Domov</b></span>
+      <button class="btn small" id="destBtn">✏️ Iné miesto</button>
+    </div>
+    <button class="btn ghost hidden" id="destHome">🏠 Späť: cesta domov</button>
+    <p class="muted tiny" id="homeInfo"></p>
+  </header>
+
+  <section class="card hidden" id="destPicker">
+    <div class="picker-head">
+      <h2 id="destTitle">Kam chceš ísť?</h2>
+      <button class="btn small" id="closeDest">Zavrieť</button>
+    </div>
+    <input id="destSearch" type="search" placeholder="Napíš miesto, napr. Aupark, ZOO, Hlavná stanica" autocomplete="off">
+    <ul id="destList" class="pick-list"></ul>
+  </section>
+
+  <section class="card install hidden" id="install">
+    <p class="big">📲 Stiahni si aplikáciu</p>
+    <p class="muted" id="installText">Budeš ju mať na ploche ako ostatné aplikácie a pôjde aj bez internetu.</p>
+    <div class="install-btns">
+      <button class="btn" id="installBtn">Stiahnuť aplikáciu</button>
+      <button class="btn ghost" id="installLater">Neskôr</button>
+    </div>
+  </section>
+
+  <main id="main">
+    <section class="card" id="status">
+      <p class="big">Hľadám, kde si… 📍</p>
+      <p class="muted">Ak sa ťa telefón opýta na polohu, klikni na <b>Povoliť</b>.</p>
+    </section>
+  </main>
+
+  <section class="card hidden" id="picker">
+    <div class="picker-head">
+      <h2>Vyber zastávku</h2>
+      <button class="btn small" id="closePicker">Zavrieť</button>
+    </div>
+    <input id="search" type="search" placeholder="Hľadaj zastávku…" autocomplete="off">
+    <ul id="stopList" class="pick-list"></ul>
+  </section>
+
+  <footer>
+    <button class="btn" id="pickBtn">🚏 Som na inej zastávke</button>
+    <button class="btn" id="locBtn">📍 Podľa polohy</button>
+    <button class="btn ghost wide" id="homeBtn">🏠 Zmeniť adresu domova</button>
+    <p class="muted tiny" id="dataInfo"></p>
+  </footer>
+
+  <script>window.APP_MODE = 'friend'; window.APP_BASE = '../';</script>
+  <script src="../app.js"></script>
+</body>
+</html>
