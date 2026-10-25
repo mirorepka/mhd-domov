@@ -385,8 +385,58 @@ function startLocation() {
   );
 }
 
+// ---------- inštalácia aplikácie ----------
+function setupInstall() {
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let dismissed = false;
+  try { dismissed = sessionStorage.getItem('installLater') === '1'; } catch { /* súkromné okno */ }
+  if (standalone || dismissed) return;
+
+  const box = $('install'), btn = $('installBtn'), later = $('installLater');
+  const hide = () => box.classList.add('hidden');
+  const showSteps = (steps) => {
+    $('installText').innerHTML = `Budeš ju mať na ploche ako ostatné aplikácie:<ol class="ios-steps">${steps.map((s) => `<li>${s}</li>`).join('')}</ol>`;
+    btn.classList.add('hidden');
+    later.textContent = 'Rozumiem';
+    box.classList.remove('hidden');
+  };
+  later.onclick = () => {
+    hide();
+    try { sessionStorage.setItem('installLater', '1'); } catch { /* nevadí */ }
+  };
+
+  let deferred = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    $('installText').textContent = 'Budeš ju mať na ploche ako ostatné aplikácie a pôjde aj bez internetu.';
+    btn.classList.remove('hidden');
+    later.textContent = 'Neskôr';
+    box.classList.remove('hidden');
+  });
+  btn.onclick = async () => {
+    if (!deferred) return;
+    deferred.prompt();
+    const { outcome } = await deferred.userChoice;
+    deferred = null;
+    if (outcome === 'accepted') hide();
+  };
+  window.addEventListener('appinstalled', hide);
+
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (ios) {
+    showSteps(['Dole ťukni na <b>Zdieľať</b> (štvorček so šípkou ⬆️)', 'Vyber <b>Pridať na plochu</b>', 'Ťukni na <b>Pridať</b>']);
+  } else if (matchMedia('(pointer: coarse)').matches) {
+    // Prehliadač bez inštalačného okna (napr. Firefox) – návod cez menu
+    setTimeout(() => {
+      if (!deferred) showSteps(['Ťukni na menu prehliadača <b>⋮</b>', 'Vyber <b>Pridať na plochu</b> alebo <b>Inštalovať aplikáciu</b>']);
+    }, 2500);
+  }
+}
+
 // ---------- štart ----------
 async function init() {
+  setupInstall();
   $('pickBtn').onclick = () => { $('picker').classList.remove('hidden'); $('search').value = ''; renderPicker(); $('picker').scrollIntoView({ behavior: 'smooth' }); };
   $('closePicker').onclick = () => $('picker').classList.add('hidden');
   $('search').oninput = renderPicker;
