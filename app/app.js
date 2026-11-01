@@ -16,8 +16,8 @@ const OPTIONS = 4;             // koľko možností ukázať
 const FRIEND = window.APP_MODE === 'friend';
 const BASE = window.APP_BASE || '';
 const HOME_KEY = 'friendHome';
-// Rýchly cieľ v hlavnej verzii (tlačidlo „K ockovi do práce“)
-const WORK = { name: 'Ockova práca', sub: 'Leškova 3/A', lat: 48.154715, lon: 17.107053 };
+// Rýchly cieľ v hlavnej verzii (tlačidlo „Tatko práca“)
+const WORK = { name: 'Tatko práca', sub: 'Leškova 3/A', lat: 48.154715, lon: 17.107053, work: true };
 
 const $ = (id) => document.getElementById(id);
 const state = { data: null, groups: [], pos: null, manual: null, watchId: null, locError: null };
@@ -78,7 +78,10 @@ function prepareNetwork(data) {
 function setDestination(dest) {
   const { data } = state;
   state.dest = dest;
-  $('destHome').classList.toggle('hidden', !dest);
+  // zvýrazniť tlačidlo aktuálneho cieľa
+  $('destHome').classList.toggle('active', !dest);
+  $('workBtn')?.classList.toggle('active', !!dest?.work);
+  $('destBtn').classList.toggle('active', !!dest && !dest.work);
   if (!homePlace() && !dest) { net.homeCands = []; return; }
   const d = currentDest();
   const all = data.stops.map(([, , lat, lon], i) => [i, distM(lat, lon, d.lat, d.lon)]).sort((a, b) => a[1] - b[1]);
