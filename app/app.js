@@ -16,8 +16,8 @@ const OPTIONS = 4;             // koľko možností ukázať
 const FRIEND = window.APP_MODE === 'friend';
 const BASE = window.APP_BASE || '';
 const HOME_KEY = 'friendHome';
-// Rýchly cieľ v hlavnej verzii (tlačidlo „Tatko práca“)
-const WORK = { name: 'Tatko práca', sub: 'Leškova 3/A', lat: 48.154715, lon: 17.107053, work: true };
+// Rýchly cieľ v hlavnej verzii (tlačidlo „Tatkova práca“)
+const WORK = { name: 'Tatkova práca', sub: 'Leškova 3/A', lat: 48.154715, lon: 17.107053, work: true };
 
 const $ = (id) => document.getElementById(id);
 const state = { data: null, groups: [], pos: null, manual: null, watchId: null, locError: null };
