@@ -288,9 +288,10 @@ function renderSteps(j, now) {
       ${last ? '' : '<div class="change">🔁 tu prestúp</div>'}</div></li>`;
   });
   const dest = currentDest();
-  if (j.destWalkM > 150 && !dest.home) {
+  if (j.destWalkM > 150) {
     const m = Math.max(1, Math.round(walkSec(j.destWalkM) / 60));
-    html += `<li class="walk">🚶 Dôjdi pešo do cieľa – asi ${fmtDist(j.destWalkM)}, ${m} ${minWord(m)}</li>`;
+    html += `<li class="walk">🚶 Dôjdi pešo ${dest.home ? 'domov' : 'do cieľa'} – asi ${fmtDist(j.destWalkM)}, ${m} ${minWord(m)}
+      <br><button class="link-btn" data-map="dest">🗺️ Ukáž na mape</button></li>`;
   }
   return html + `<li class="homeStep">${dest.home ? '🏠 Doma' : `🏁 ${esc(dest.name)}`} o <b>${hhmm(relToDate(j.home))}</b></li></ol>`;
 }
@@ -318,14 +319,22 @@ function render() {
   }
   const dest = currentDest();
   const arriveTxt = dest.home ? 'doma o' : 'v cieli o';
-  if (!state.manual && distM(state.pos.lat, state.pos.lon, dest.lat, dest.lon) < AT_HOME_M) {
-    main.innerHTML = dest.home
-      ? `<section class="card"><p class="big">Si doma alebo blízko domu 🏠</p>
-        <p class="muted">Domov to máš pešo. Keď budeš ďalej, ukážem ti, ako sa dostaneš domov.</p></section>`
-      : `<section class="card"><p class="big">Si blízko cieľa 🏁</p>
-        <p class="muted">Do cieľa <b>${esc(dest.name)}</b> to máš pešo.</p></section>`;
+  const toDest = state.pos ? distM(state.pos.lat, state.pos.lon, dest.lat, dest.lon) : Infinity;
+  if (!state.manual && toDest < AT_HOME_M) {
+    // Vystúpil a je blízko cieľa → mapa s jeho polohou a cieľom
+    const arrived = toDest < 60;
+    const m = Math.max(1, Math.round(walkSec(toDest) / 60));
+    main.innerHTML = `<section class="card"><p class="big">${arrived ? (dest.home ? 'Si doma 🏠' : 'Si v cieli 🎉')
+      : dest.home ? 'Si blízko domu 🏠' : 'Si blízko cieľa 🏁'}</p>
+      ${arrived ? '' : `<p class="muted">Ďalej choď pešo – ešte asi <b>${fmtDist(toDest)}</b>, ${m} ${minWord(m)}. Pozri mapu nižšie.</p>`}</section>`;
+    const key = `near:${dest.name}:${dest.lat}`;
+    if (!arrived && state.mapDismissed !== key) {
+      openMap({ key, auto: true, title: dest.home ? 'Cesta domov pešo' : `Cesta pešo: ${dest.name}`, to: { ...dest, icon: dest.home ? '🏠' : '🏁' } });
+    }
+    updateMapMe();
     return;
   }
+  if (state.map?.auto) closeMap();
 
   const list = journeys(now);
   const first = list[0];
@@ -342,10 +351,12 @@ function render() {
   const leaveMin = Math.round((first.leave - nowRel) / 60);
   const walkMin = Math.max(1, Math.round(walkSec(first.originWalkM) / 60));
 
+  state.lastJourney = first;
   const where = atStop
     ? `<p class="muted" style="margin:0">${state.manual ? 'Si na zastávke' : 'Si na zastávke ✅'}</p><p class="stop-name">${esc(data.stops[first.origin][0])}</p>`
     : `<p class="muted" style="margin:0">Choď na zastávku</p><p class="stop-name">${esc(data.stops[first.origin][0])}</p>
-       <p class="stop-meta">${fmtDist(first.originWalkM)} · pešo asi ${walkMin} ${minWord(walkMin)}</p>`;
+       <p class="stop-meta">${fmtDist(first.originWalkM)} · pešo asi ${walkMin} ${minWord(walkMin)}
+       <button class="link-btn" data-map="origin">🗺️ Ukáž na mape</button></p>`;
 
   const whenTxt = depMin <= 0 ? 'teraz!' : depMin < 60 ? `o ${depMin} min` : dayHhmm(relToDate(firstRide.dep), now);
   let pill;
@@ -380,6 +391,104 @@ function render() {
   }
   // Aj keď si vybral zastávku ručne, stále ho prosíme o povolenie polohy
   main.innerHTML = (state.locError && !state.pos ? locationCard() : '') + html;
+  updateMapMe();
+}
+
+// ---------- mapa (Leaflet + OpenStreetMap, načíta sa až keď treba) ----------
+let leafletReady = null;
+function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  leafletReady ||= new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+    document.head.append(css);
+    const js = document.createElement('script');
+    js.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    js.onload = resolve;
+    js.onerror = () => { leafletReady = null; reject(new Error('mapa')); };
+    document.head.append(js);
+  });
+  return leafletReady;
+}
+const pin = (icon) => L.divIcon({ html: icon, className: 'emoji-pin', iconSize: [34, 34], iconAnchor: [17, 30] });
+
+// opts: { key, title, to: { lat, lon, icon }, from?: { lat, lon, icon }, auto? }
+async function openMap(opts) {
+  const card = $('mapCard');
+  if (state.map?.key === opts.key && !card.classList.contains('hidden')) return;
+  state.map = { ...opts };
+  $('mapTitle').textContent = opts.title;
+  card.classList.remove('hidden');
+  updateNavLink();
+  try { await loadLeaflet(); } catch {
+    $('mapEl').innerHTML = '<p class="muted" style="padding:12px">Mapa sa nenačítala – skontroluj internet. Tlačidlo Navigovať pešo funguje aj tak.</p>';
+    return;
+  }
+  if (state.map?.key !== opts.key) return;
+  if (!state.leaflet) {
+    $('mapEl').innerHTML = '';
+    const map = L.map('mapEl');
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    state.leaflet = { map, layer: L.layerGroup().addTo(map), me: null, line: null };
+  }
+  const lf = state.leaflet;
+  lf.layer.clearLayers();
+  lf.me = null;
+  L.marker([opts.to.lat, opts.to.lon], { icon: pin(opts.to.icon || '🏁') }).addTo(lf.layer);
+  if (opts.from) L.marker([opts.from.lat, opts.from.lon], { icon: pin(opts.from.icon || '🚏') }).addTo(lf.layer);
+  lf.line = L.polyline([], { color: '#0e5aa7', weight: 4, dashArray: '6 8' }).addTo(lf.layer);
+  setTimeout(() => {
+    lf.map.invalidateSize();
+    updateMapMe(true);
+  }, 50);
+}
+
+function updateMapMe(fit = false) {
+  const lf = state.leaflet, m = state.map;
+  if (!lf || !lf.line || !m || $('mapCard').classList.contains('hidden')) return;
+  updateNavLink();
+  const pts = [[m.to.lat, m.to.lon]];
+  if (m.from) pts.push([m.from.lat, m.from.lon]);
+  if (state.pos) {
+    const p = [state.pos.lat, state.pos.lon];
+    if (!lf.me) lf.me = L.circleMarker(p, { radius: 9, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(lf.layer);
+    else lf.me.setLatLng(p);
+    pts.push(p);
+  }
+  // čiarkovaná čiara: od zastávky (alebo odo mňa) k cieľu
+  const start = m.from ? [m.from.lat, m.from.lon] : state.pos ? [state.pos.lat, state.pos.lon] : null;
+  lf.line.setLatLngs(start ? [start, [m.to.lat, m.to.lon]] : []);
+  if (fit) lf.map.fitBounds(pts.length > 1 ? pts : [pts[0], pts[0]], { padding: [40, 40], maxZoom: 17 });
+}
+
+function updateNavLink() {
+  const m = state.map;
+  if (!m) return;
+  const o = state.pos || m.from;
+  $('navLink').href = 'https://www.google.com/maps/dir/?api=1&travelmode=walking'
+    + (o ? `&origin=${o.lat},${o.lon}` : '') + `&destination=${m.to.lat},${m.to.lon}`;
+}
+
+function closeMap() {
+  $('mapCard').classList.add('hidden');
+  state.map = null;
+}
+
+function mapForStep(kind) {
+  const j = state.lastJourney;
+  if (!j) return;
+  const { stops } = state.data;
+  const dest = currentDest();
+  if (kind === 'origin') {
+    const s = stops[j.origin];
+    openMap({ key: `origin:${j.origin}`, title: `Cesta na zastávku ${s[0]}`, to: { lat: s[2], lon: s[3], icon: '🚏' } });
+  } else {
+    const last = j.legs.filter((l) => !l.walk).at(-1), s = stops[last.to];
+    openMap({ key: `dest:${last.to}:${dest.lat}`, title: `Zo zastávky ${s[0]} ${dest.home ? 'domov' : 'do cieľa'}`,
+      from: { lat: s[2], lon: s[3], icon: '🚏' }, to: { ...dest, icon: dest.home ? '🏠' : '🏁' } });
+  }
+  $('mapCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function locationCard() {
@@ -640,6 +749,7 @@ async function init() {
   };
   $('locBtn').onclick = () => { state.manual = null; startLocation(); render(); };
   $('destBtn').onclick = () => openDestPicker('dest');
+  $('mapClose').onclick = () => { if (state.map?.auto) state.mapDismissed = state.map.key; closeMap(); };
   if ($('workBtn')) $('workBtn').onclick = () => { setDestination({ ...WORK }); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   if ($('homeBtn')) $('homeBtn').onclick = () => { openDestPicker('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   $('closeDest').onclick = () => $('destPicker').classList.add('hidden');
@@ -693,6 +803,8 @@ async function init() {
   }).catch(() => {});
   $('main').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="sethome"]')) { openDestPicker('home'); return; }
+    const mb = e.target.closest('[data-map]');
+    if (mb) { mapForStep(mb.dataset.map); return; }
     if (e.target.closest('[data-act="loc"]') && !state.locTrying) {
       state.locTrying = true;
       state.locAttempts = (state.locAttempts || 0) + 1;

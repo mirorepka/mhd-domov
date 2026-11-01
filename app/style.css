@@ -199,3 +199,11 @@ a { color: var(--accent); }
 .quick .ic { font-size: 1.4rem; line-height: 1; }
 .quick .btn.active { background: var(--accent); color: #fff; }
 .dest-now { margin: 0 0 14px; color: var(--muted); }
+
+#mapEl { height: 340px; border-radius: 14px; overflow: hidden; margin-top: 8px; background: var(--bg); z-index: 0; }
+.map-btns { display: flex; gap: 10px; margin-top: 12px; }
+.map-btns .btn { text-align: center; text-decoration: none; }
+.emoji-pin { font-size: 28px; line-height: 34px; text-align: center; background: none; border: 0; filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
+.link-btn { display: inline-block; margin-top: 6px; padding: 6px 10px; font: inherit; font-size: .9rem; font-weight: 600;
+  color: var(--accent); background: transparent; border: 1px solid var(--accent); border-radius: 10px; cursor: pointer; }
+.stop-meta .link-btn { margin-left: 6px; }
