@@ -190,3 +190,5 @@ footer .tiny { flex-basis: 100%; }
 .btn:disabled { opacity: .7; cursor: default; }
 a { color: var(--accent); }
 #homeBtn { margin-top: 0; }
+.quick { display: flex; gap: 10px; margin: -6px 0 14px; }
+.quick .btn { flex: 1; padding: 10px; text-align: center; text-decoration: none; }

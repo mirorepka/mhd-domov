@@ -16,6 +16,8 @@ const OPTIONS = 4;             // koľko možností ukázať
 const FRIEND = window.APP_MODE === 'friend';
 const BASE = window.APP_BASE || '';
 const HOME_KEY = 'friendHome';
+// Rýchly cieľ v hlavnej verzii (tlačidlo „K ockovi do práce“)
+const WORK = { name: 'Ockova práca', sub: 'Leškova 3/A', lat: 48.154715, lon: 17.107053 };
 
 const $ = (id) => document.getElementById(id);
 const state = { data: null, groups: [], pos: null, manual: null, watchId: null, locError: null };
@@ -635,6 +637,7 @@ async function init() {
   };
   $('locBtn').onclick = () => { state.manual = null; startLocation(); render(); };
   $('destBtn').onclick = () => openDestPicker('dest');
+  if ($('workBtn')) $('workBtn').onclick = () => { setDestination({ ...WORK }); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   if ($('homeBtn')) $('homeBtn').onclick = () => { openDestPicker('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   $('closeDest').onclick = () => $('destPicker').classList.add('hidden');
   $('destHome').onclick = () => { setDestination(null); render(); };
