@@ -208,3 +208,15 @@ a { color: var(--accent); }
 .link-btn { display: inline-block; margin-top: 6px; padding: 6px 10px; font: inherit; font-size: .9rem; font-weight: 600;
   color: var(--accent); background: transparent; border: 1px solid var(--accent); border-radius: 10px; cursor: pointer; }
 .stop-meta .link-btn { margin-left: 6px; }
+
+.ride-btns { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.ride-btns .btn.ghost { flex: 1; }
+p .badge.sm { display: inline-flex; min-width: 40px; height: 30px; font-size: 1rem; border-radius: 9px; vertical-align: middle; margin: 0 2px; }
+.ride-btns .btn { flex: 1; }
+.ride-stops { list-style: none; padding: 0; margin: 14px 0 0; border-left: 3px solid var(--line); }
+.ride-stops li { padding: 5px 0 5px 14px; position: relative; color: var(--muted); }
+.ride-stops li::before { content: ""; position: absolute; left: -7px; top: 12px; width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+.ride-stops li.now { color: var(--text); font-weight: 700; }
+.ride-stops li.now::before { background: var(--accent); }
+.ride-stops li.out { color: var(--bad); font-weight: 800; }
+.ride-stops li.out::before { background: var(--bad); }

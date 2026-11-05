@@ -76,6 +76,7 @@ function prepareNetwork(data) {
 
 // Cieľ: null = domov, inak { name, lat, lon }. Pripraví zastávky, z ktorých sa do cieľa dôjde pešo.
 function setDestination(dest) {
+  if (state.ride) { state.ride = null; saveRide(); keepAwake(false); }
   const { data } = state;
   state.dest = dest;
   // zvýrazniť tlačidlo aktuálneho cieľa
@@ -219,6 +220,7 @@ function bestJourney(origins, act) {
     }
     const pat = patterns[L.p], trip = act[L.p][L.t], prof = pat[3][trip[1]];
     legs.unshift({
+      seq: pat[2].slice(L.b, L.a + 1), times: prof.slice(L.b, L.a + 1).map((x) => trip[0] + x),
       route: state.data.routes[pat[0]], headsign: pat[1],
       from: pat[2][L.b], to: pat[2][L.a], stopsCount: L.a - L.b,
       dep: trip[0] + prof[L.b], arr: trip[0] + prof[L.a],
@@ -311,6 +313,8 @@ function render() {
     return;
   }
 
+  if (state.ride) { renderRide(); return; }
+
   if (!state.manual && !state.pos) {
     main.innerHTML = state.locError ? locationCard()
       : `<section class="card"><p class="big">Hľadám, kde si… 📍</p>
@@ -320,7 +324,11 @@ function render() {
   const dest = currentDest();
   const arriveTxt = dest.home ? 'doma o' : 'v cieli o';
   const toDest = state.pos ? distM(state.pos.lat, state.pos.lon, dest.lat, dest.lon) : Infinity;
-  if (!state.manual && toDest < AT_HOME_M) {
+  const fw = state.finalWalk;
+  const afterRide = fw && fw.key === destKey(dest) && fw.until > Date.now() && toDest < 1500;
+  if (fw && !afterRide) state.finalWalk = null;
+  if (afterRide && toDest < 60) state.finalWalk = null;
+  if (!state.manual && (toDest < AT_HOME_M || afterRide)) {
     // Vystúpil a je blízko cieľa → mapa s jeho polohou a cieľom
     const arrived = toDest < 60;
     const m = Math.max(1, Math.round(walkSec(toDest) / 60));
@@ -352,6 +360,7 @@ function render() {
   const walkMin = Math.max(1, Math.round(walkSec(first.originWalkM) / 60));
 
   state.lastJourney = first;
+  if (!moving()) state.plan = { j: first, mid0: net.mid0 };
   const where = atStop
     ? `<p class="muted" style="margin:0">${state.manual ? 'Si na zastávke' : 'Si na zastávke ✅'}</p><p class="stop-name">${esc(data.stops[first.origin][0])}</p>`
     : `<p class="muted" style="margin:0">Choď na zastávku</p><p class="stop-name">${esc(data.stops[first.origin][0])}</p>
@@ -373,7 +382,10 @@ function render() {
       <div class="sub">odchod ${dayHhmm(relToDate(firstRide.dep), now)} · ${transfersTxt}</div>
       <div class="sub"><b>${arriveTxt} ${hhmm(relToDate(first.home))}</b></div></div></div>
     <div class="pill ${pill[0]}">${pill[1]}</div>
+    <button class="btn wide" data-act="ride-start">🚌 Som v autobuse – veď ma</button>
     ${renderSteps(first, now)}</section>`;
+  if (state.notice && state.noticeUntil > Date.now()) html = `<section class="card"><p class="pill warn">${esc(state.notice)}</p></section>` + html;
+  html = rideAskCard(now) + html;
 
   const rest = list.slice(1);
   if (rest.length) {
@@ -392,6 +404,233 @@ function render() {
   // Aj keď si vybral zastávku ručne, stále ho prosíme o povolenie polohy
   main.innerHTML = (state.locError && !state.pos ? locationCard() : '') + html;
   updateMapMe();
+}
+
+// ---------- jazda: "Som v autobuse" ----------
+const RIDE_KEY = 'ride';
+const FAST_MS = 4.5;   // ~16 km/h – rýchlejšie, než dieťa beží → asi ide vozidlom
+const ON_STOP_M = 80;  // takto blízko zastávky = autobus na nej stojí
+
+function trackSpeed(p) {
+  const t = p.timestamp || Date.now();
+  const { latitude: lat, longitude: lon, accuracy } = p.coords;
+  let v = p.coords.speed;
+  const prev = state.lastFix;
+  if (v === null || v === undefined || Number.isNaN(v)) {
+    if (!prev || accuracy > 100) { if (!prev) state.lastFix = { lat, lon, t }; return; }
+    if (t - prev.t < 3000) return;
+    v = distM(prev.lat, prev.lon, lat, lon) / ((t - prev.t) / 1000);
+  }
+  state.lastFix = { lat, lon, t };
+  state.fastCount = v > FAST_MS ? (state.fastCount || 0) + 1 : 0;
+}
+const moving = () => (state.fastCount || 0) >= 2;
+const zastavky = (n) => (n === 1 ? 'zastávka' : n >= 2 && n <= 4 ? 'zastávky' : 'zastávok');
+const rideLegs = (r) => r.legs.filter((l) => !l.walk);
+const rideAt = (r, rel) => new Date(r.mid0 + rel * 1000);
+const destKey = (d) => `${d.name}:${d.lat}`;
+const posDist = (s) => distM(state.pos.lat, state.pos.lon, s[2], s[3]);
+
+let audioCtx = null;
+function unlockSound() {
+  try {
+    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume();
+  } catch { /* bez zvuku */ }
+}
+function alertKid() {
+  try { navigator.vibrate?.([400, 150, 400, 150, 400]); } catch { /* iPhone nevibruje */ }
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  [0, 0.35, 0.7].forEach((d) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, t + d);
+    g.gain.exponentialRampToValueAtTime(0.5, t + d + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.25);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t + d);
+    o.stop(t + d + 0.3);
+  });
+}
+
+// Počas jazdy nech obrazovka nezhasne (inak telefón prestane sledovať polohu)
+async function keepAwake(on) {
+  try {
+    if (on && !state.wake && 'wakeLock' in navigator) {
+      state.wake = await navigator.wakeLock.request('screen');
+      state.wake.addEventListener('release', () => { state.wake = null; });
+    } else if (!on && state.wake) {
+      await state.wake.release();
+      state.wake = null;
+    }
+  } catch { /* nepodporované */ }
+}
+
+function saveRide() {
+  try {
+    if (state.ride) localStorage.setItem(RIDE_KEY, JSON.stringify(state.ride));
+    else localStorage.removeItem(RIDE_KEY);
+  } catch { /* nevadí */ }
+}
+function loadRide() {
+  try {
+    const r = JSON.parse(localStorage.getItem(RIDE_KEY) || 'null');
+    if (r && r.gen === state.data.generated && Date.now() < r.mid0 + (r.home + 1800) * 1000) {
+      state.ride = r;
+      keepAwake(true);
+    } else localStorage.removeItem(RIDE_KEY);
+  } catch { /* nevadí */ }
+}
+
+function startRide(j, mid0) {
+  if (!j) return;
+  unlockSound();
+  state.ride = {
+    gen: state.data.generated, mid0, legs: j.legs, home: j.home, dest: currentDest(),
+    leg: 0, phase: 'ride', passed: 0, warned: 0, reachedAt: 0,
+  };
+  saveRide();
+  keepAwake(true);
+  closeMap();
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function endRide(final) {
+  const r = state.ride;
+  state.ride = null;
+  saveRide();
+  keepAwake(false);
+  if (final && r) {
+    state.finalWalk = { key: destKey(r.dest), until: Date.now() + 45 * 60000 };
+    state.mapDismissed = null;
+  } else state.noAskUntil = Date.now() + 15 * 60000;
+  render();
+}
+
+function rideAlighted() {
+  const r = state.ride;
+  if (r.leg + 1 < rideLegs(r).length) {
+    Object.assign(r, { leg: r.leg + 1, phase: 'transfer', passed: 0, warned: 0, reachedAt: 0 });
+    saveRide();
+    alertKid();
+    render();
+  } else endRide(true);
+}
+
+// Kde v autobuse sme: r.passed = posledná zastávka, na ktorej sme boli (alebo ju už minuli)
+function rideProgress(r, leg, nowRel) {
+  const { stops } = state.data, seq = leg.seq, last = seq.length - 1;
+  r.onStop = false;
+  if (state.pos && state.pos.acc < 250) {
+    let j = -1, dj = Infinity;
+    for (let i = r.passed; i < seq.length; i++) {
+      const d = posDist(stops[seq[i]]);
+      if (d < dj) { dj = d; j = i; }
+    }
+    if (dj < ON_STOP_M) { r.passed = j; r.onStop = true; }
+    else if (j > r.passed + 1 && dj < 600) r.passed = j - 1;
+    r.distLast = posDist(stops[seq[last]]);
+  } else {
+    // bez polohy podľa cestovného poriadku
+    while (r.passed < last && leg.times[r.passed + 1] <= nowRel) r.passed++;
+    r.onStop = r.passed === last;
+    r.distLast = undefined;
+  }
+}
+
+function renderRide() {
+  const r = state.ride, main = $('main');
+  const { stops } = state.data;
+  const rides = rideLegs(r), leg = rides[r.leg];
+  const now = new Date(), nowRel = (now.getTime() - r.mid0) / 1000;
+  if (state.map?.auto) closeMap();
+  const btns = (first) => `<div class="ride-btns">${first}
+    <button class="btn ghost" data-act="ride-end">⏹️ Ukončiť navigáciu</button></div>`;
+
+  if (r.phase === 'transfer') {
+    // čakáme na prestup – keď sa rozbehne vozidlo, ideme ďalej
+    if (moving() && state.pos && posDist(stops[leg.seq[0]]) > 150) {
+      r.phase = 'ride';
+      saveRide();
+      return renderRide();
+    }
+    const prev = rides[r.leg - 1];
+    const depMin = Math.round((leg.dep - nowRel) / 60);
+    const same = prev.to === leg.from;
+    const late = depMin < -10;
+    main.innerHTML = `<section class="card ride">
+      <p class="big">🔁 Prestup</p>
+      <p class="muted" style="margin:0">${same ? 'Zostaň na zastávke' : 'Prejdi na zastávku'}</p>
+      <p class="stop-name">${stopLabel(leg.from)}</p>
+      ${same ? '' : '<button class="link-btn" data-map="ride">🗺️ Ukáž na mape</button>'}
+      <div class="next">${badge(leg.route)}<div>
+        <div class="when">${depMin <= 0 ? 'teraz!' : `o ${depMin} ${minWord(depMin)}`}</div>
+        <div class="sub">odchod ${hhmm(rideAt(r, leg.dep))} · smer ${esc(leg.headsign)}</div></div></div>
+      <div class="pill ${late ? 'warn' : 'ok'}">${late ? 'Ušiel ti? Ťukni Ukončiť a nájdem ti ďalší spoj.'
+        : `Nastúp do linky ${esc(leg.route[0])} a ťukni Som v autobuse`}</div>
+      ${btns('<button class="btn" data-act="ride-board">🚌 Som v autobuse</button>')}
+    </section>`;
+    return;
+  }
+
+  rideProgress(r, leg, nowRel);
+  const seq = leg.seq, last = seq.length - 1;
+  if (r.passed === last && r.onStop) r.reachedAt ||= Date.now();
+  if (r.reachedAt) {
+    if (moving() && r.distLast > 300) {
+      // nevystúpil a ide ďalej → nájdeme novú cestu odtiaľto
+      state.notice = 'Prešiel si zastávku 😮 Vystúp na najbližšej – tu je nová cesta.';
+      state.noticeUntil = Date.now() + 5 * 60000;
+      alertKid();
+      return endRide(false);
+    }
+    if (!moving() && (Date.now() - r.reachedAt > 30000 || (r.distLast > 120 && !r.onStop))) return rideAlighted();
+  }
+
+  const left = last - r.passed;
+  const level = left === 0 ? 2 : left === 1 && !r.onStop ? 1 : 0;
+  if (level > r.warned) { r.warned = level; alertKid(); }
+  saveRide();
+
+  const arr = hhmm(rideAt(r, leg.arr));
+  const pill = level === 2 ? ['bad', '🚪 Vystupuj teraz!']
+    : level === 1 ? ['warn', '⚠️ Priprav sa! Na ďalšej zastávke vystupuješ.']
+    : ['ok', `Ešte ${left} ${zastavky(left)} · vystúpiš asi o ${arr}`];
+  const nextIdx = r.onStop ? r.passed : Math.min(last, r.passed + 1);
+  const after = rides[r.leg + 1];
+  const list = seq.slice(r.passed).map((s, k) => {
+    const i = r.passed + k;
+    const cls = i === last ? 'out' : i === nextIdx ? 'now' : '';
+    return `<li class="${cls}">${i === last ? '🚪 ' : ''}${esc(stops[s][0])}${i === nextIdx && i !== last ? (r.onStop ? ' <span class="sub">– si tu</span>' : ' <span class="sub">– ďalšia</span>') : ''}</li>`;
+  }).join('');
+  main.innerHTML = `<section class="card ride">
+    <div class="next">${badge(leg.route)}<div>
+      <div class="when">Vezieš sa 🚌</div>
+      <div class="sub">smer ${esc(leg.headsign)}</div></div></div>
+    <p class="muted" style="margin:10px 0 0">Vystúp na zastávke</p>
+    <p class="stop-name">${esc(stops[seq[last]][0])}</p>
+    <div class="pill ${pill[0]}">${pill[1]}</div>
+    ${after ? `<p class="muted after">Potom prestúpiš na ${badge(after.route, true)} (odchod ${hhmm(rideAt(r, after.dep))}).</p>` : ''}
+    <ol class="ride-stops">${list}</ol>
+    ${btns('<button class="btn" data-act="ride-off">🏁 Vystúpil som</button>')}
+    <p class="muted tiny">Nechaj aplikáciu otvorenú – pred výstupom ťa upozorním${'vibrate' in navigator ? ' zvukom a vibrovaním' : ' zvukom'}.</p>
+  </section>`;
+}
+
+// Ak sa dieťa rozbehne spolu s autobusom z plánu, opýtame sa ho
+function rideAskCard(now) {
+  const p = state.plan;
+  if (!p || !moving() || !state.pos || (state.noAskUntil || 0) > Date.now()) return '';
+  const leg = p.j.legs.find((l) => !l.walk);
+  const nowRel = (now.getTime() - p.mid0) / 1000;
+  if (nowRel < leg.dep - 600 || nowRel > leg.arr + 300) return '';
+  if (!leg.seq.some((s) => posDist(state.data.stops[s]) < 400)) return '';
+  return `<section class="card locask"><p class="big">Si v autobuse ${badge(leg.route, true)}?</p>
+    <p class="muted">Zapnem ti navigáciu a pred výstupom ťa upozorním.</p>
+    <div class="ride-btns"><button class="btn" data-act="ride-yes">Áno 🚌</button>
+    <button class="btn ghost" data-act="ride-no">Nie</button></div></section>`;
 }
 
 // ---------- mapa (Leaflet + OpenStreetMap, načíta sa až keď treba) ----------
@@ -476,6 +715,12 @@ function closeMap() {
 }
 
 function mapForStep(kind) {
+  if (kind === 'ride' && state.ride) {
+    const leg = rideLegs(state.ride)[state.ride.leg], s = state.data.stops[leg.from];
+    openMap({ key: `ride:${leg.from}`, title: `Cesta na zastávku ${s[0]}`, to: { lat: s[2], lon: s[3], icon: '🚏' } });
+    $('mapCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   const j = state.lastJourney;
   if (!j) return;
   const { stops } = state.data;
@@ -668,6 +913,7 @@ function startLocation(highAccuracy = true) {
       state.locPending = false;
       state.locTrying = false;
       state.pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy };
+      trackSpeed(p);
       state.locError = null;
       render();
     },
@@ -680,7 +926,7 @@ function startLocation(highAccuracy = true) {
       const show = () => { state.locTrying = false; state.locError = { code: e.code, msg: e.message }; render(); };
       if (state.locTrying) setTimeout(show, 1200); else show();
     },
-    { enableHighAccuracy: highAccuracy, maximumAge: 60000, timeout: highAccuracy ? 15000 : 30000 }
+    { enableHighAccuracy: highAccuracy, maximumAge: 10000, timeout: highAccuracy ? 15000 : 30000 }
   );
 }
 
@@ -789,12 +1035,15 @@ async function init() {
   const v = state.data.validTo;
   $('dataInfo').textContent = `Cestovný poriadok DPB platí do ${+v.slice(6)}. ${+v.slice(4, 6)}. ${v.slice(0, 4)}. Časy sú podľa poriadku, bez meškaní.`;
 
+  loadRide();
   startLocation();
   render();
   setInterval(render, 15000);
+  document.addEventListener('click', unlockSound, { once: true });
   // Keď sa vráti do aplikácie (napr. z nastavení) bez polohy, opýtame sa znova
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
+    if (state.ride) keepAwake(true);
     if (!state.pos && state.locError && !state.locPending) startLocation();
     render();
   });
@@ -805,6 +1054,13 @@ async function init() {
     if (e.target.closest('[data-act="sethome"]')) { openDestPicker('home'); return; }
     const mb = e.target.closest('[data-map]');
     if (mb) { mapForStep(mb.dataset.map); return; }
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'ride-start') { startRide(state.lastJourney, net.mid0); return; }
+    if (act === 'ride-yes') { startRide(state.plan?.j, state.plan?.mid0); return; }
+    if (act === 'ride-no') { state.noAskUntil = Date.now() + 10 * 60000; render(); return; }
+    if (act === 'ride-end') { endRide(false); return; }
+    if (act === 'ride-off') { rideAlighted(); return; }
+    if (act === 'ride-board') { unlockSound(); state.ride.phase = 'ride'; saveRide(); render(); return; }
     if (e.target.closest('[data-act="loc"]') && !state.locTrying) {
       state.locTrying = true;
       state.locAttempts = (state.locAttempts || 0) + 1;
